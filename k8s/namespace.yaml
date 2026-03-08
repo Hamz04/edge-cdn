@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge-cdn
+  labels:
+    app.kubernetes.io/name: edge-cdn
+    app.kubernetes.io/part-of: edge-cdn

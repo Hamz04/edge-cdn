@@ -1,0 +1,29 @@
+# Prometheus scrape config for Edge CDN cluster.
+# Scrapes the gateway + all 3 edge nodes every 5 seconds.
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "edge-cdn-gateway"
+    static_configs:
+      - targets: ["gateway:8080"]
+        labels:
+          role: "gateway"
+          region: "global"
+
+  - job_name: "edge-cdn-nodes"
+    static_configs:
+      - targets: ["edge-us-east:8080"]
+        labels:
+          role: "edge"
+          region: "us-east"
+      - targets: ["edge-eu-west:8080"]
+        labels:
+          role: "edge"
+          region: "eu-west"
+      - targets: ["edge-ap-south:8080"]
+        labels:
+          role: "edge"
+          region: "ap-south"

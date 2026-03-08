@@ -1,0 +1,166 @@
+# Edge Node Deployment — runs the CDN cache + router logic.
+# Deployed per-region with topology spread for HA.
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-nodes
+  namespace: edge-cdn
+  labels:
+    app.kubernetes.io/name: edge-node
+    app.kubernetes.io/part-of: edge-cdn
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: edge-node
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-node-us-east
+  namespace: edge-cdn
+  labels:
+    app.kubernetes.io/name: edge-node
+    app.kubernetes.io/part-of: edge-cdn
+    region: us-east
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: edge-node
+      region: us-east
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: edge-node
+        region: us-east
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: edge-node
+              region: us-east
+      containers:
+        - name: edge-cdn
+          image: edge-cdn:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+            - name: IS_GATEWAY
+              value: "false"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_REGION
+              value: us-east
+            - name: REDIS_URL
+              value: redis-0.redis.edge-cdn.svc.cluster.local:6379
+            - name: CACHE_NODES
+              value: "node-1,node-2,node-3"
+            - name: DEFAULT_TTL_SECONDS
+              value: "300"
+            - name: VNODE_COUNT
+              value: "150"
+            - name: LRU_FALLBACK_SIZE
+              value: "10000"
+            - name: RATE_LIMIT_RPS
+              value: "100"
+            - name: RATE_LIMIT_BURST
+              value: "200"
+            - name: CB_FAIL_THRESHOLD
+              value: "5"
+            - name: CB_OPEN_TIMEOUT_SEC
+              value: "30"
+            - name: LOG_FORMAT
+              value: json
+            - name: LOG_LEVEL
+              value: info
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            failureThreshold: 10
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: edge-node-us-east-hpa
+  namespace: edge-cdn
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: edge-node-us-east
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 120

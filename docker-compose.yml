@@ -1,0 +1,167 @@
+# Edge CDN — Multi-region deployment with observability stack.
+# 3 edge nodes (us-east, eu-west, ap-south), each with its own Redis,
+# fronted by a gateway that routes by region and handles failover.
+# Prometheus scrapes all nodes; Grafana provides dashboards.
+
+version: "3.8"
+
+services:
+  # ============================================================
+  # GATEWAY — Entry point, routes to nearest healthy edge node
+  # ============================================================
+  gateway:
+    build: .
+    container_name: cdn-gateway
+    environment:
+      - NODE_NAME=gateway
+      - IS_GATEWAY=true
+      - PORT=8080
+      - EDGE_NODES=us-east=edge-us-east:8080,eu-west=edge-eu-west:8080,ap-south=edge-ap-south:8080
+      - HEALTH_CHECK_INTERVAL_SEC=5
+      - HEALTH_CHECK_TIMEOUT_SEC=2
+      - LOG_LEVEL=info
+      - LOG_FORMAT=text
+    ports:
+      - "8080:8080"
+    depends_on:
+      edge-us-east:
+        condition: service_healthy
+      edge-eu-west:
+        condition: service_healthy
+      edge-ap-south:
+        condition: service_healthy
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  # ============================================================
+  # EDGE NODES — Each simulates a regional edge PoP
+  # ============================================================
+  edge-us-east:
+    build: .
+    container_name: cdn-edge-us-east
+    environment:
+      - NODE_NAME=us-east-1
+      - NODE_REGION=us-east
+      - PORT=8080
+      - REDIS_URL=redis-us-east:6379
+      - CACHE_NODES=us-east-1,us-east-2,us-east-3
+      - DEFAULT_TTL_SECONDS=300
+      - ORIGIN_MIN_LATENCY_MS=50
+      - ORIGIN_MAX_LATENCY_MS=200
+      - LRU_FALLBACK_SIZE=10000
+      - LOG_LEVEL=info
+    depends_on:
+      redis-us-east:
+        condition: service_started
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  edge-eu-west:
+    build: .
+    container_name: cdn-edge-eu-west
+    environment:
+      - NODE_NAME=eu-west-1
+      - NODE_REGION=eu-west
+      - PORT=8080
+      - REDIS_URL=redis-eu-west:6379
+      - CACHE_NODES=eu-west-1,eu-west-2,eu-west-3
+      - DEFAULT_TTL_SECONDS=300
+      - ORIGIN_MIN_LATENCY_MS=80
+      - ORIGIN_MAX_LATENCY_MS=250
+      - LRU_FALLBACK_SIZE=10000
+      - LOG_LEVEL=info
+    depends_on:
+      redis-eu-west:
+        condition: service_started
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  edge-ap-south:
+    build: .
+    container_name: cdn-edge-ap-south
+    environment:
+      - NODE_NAME=ap-south-1
+      - NODE_REGION=ap-south
+      - PORT=8080
+      - REDIS_URL=redis-ap-south:6379
+      - CACHE_NODES=ap-south-1,ap-south-2,ap-south-3
+      - DEFAULT_TTL_SECONDS=300
+      - ORIGIN_MIN_LATENCY_MS=100
+      - ORIGIN_MAX_LATENCY_MS=300
+      - LRU_FALLBACK_SIZE=10000
+      - LOG_LEVEL=info
+    depends_on:
+      redis-ap-south:
+        condition: service_started
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  # ============================================================
+  # REDIS — One per region for cache isolation
+  # ============================================================
+  redis-us-east:
+    image: redis:7-alpine
+    container_name: cdn-redis-us-east
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  redis-eu-west:
+    image: redis:7-alpine
+    container_name: cdn-redis-eu-west
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  redis-ap-south:
+    image: redis:7-alpine
+    container_name: cdn-redis-ap-south
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  # ============================================================
+  # MONITORING — Prometheus + Grafana
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: cdn-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: cdn-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=edgecdn
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/cdn-overview.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - cdn-network
+    restart: unless-stopped
+
+networks:
+  cdn-network:
+    driver: bridge
+    name: edge-cdn-network

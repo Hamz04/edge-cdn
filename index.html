@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Edge CDN | Infrastructure Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0f1e;--surface:#111a2e;--surface2:#182040;--border:#1e2d4a;--text:#e0e7ff;--muted:#5b6b8a;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;--orange:#f59e0b;--purple:#a78bfa;--cyan:#22d3ee;--accent:#3b82f6}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
+
+.hdr{background:linear-gradient(135deg,#0f172a,#1e1b4b);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hdr-left{display:flex;align-items:center;gap:14px}
+.hdr .logo{font-size:18px;font-weight:800;background:linear-gradient(135deg,var(--cyan),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hdr .sub{font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+.hdr-right{display:flex;align-items:center;gap:16px;font-size:11px;color:var(--muted)}
+.hdr-right .live{color:var(--green);display:flex;align-items:center;gap:6px}
+.hdr-right .live::before{content:'';width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:20px 24px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
+.stat .val{font-size:26px;font-weight:800}
+.stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+.stat .chg{font-size:11px;margin-top:4px}
+@media(max-width:900px){.stats{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:500px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+/* Grid */
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;padding:0 24px 20px}
+.grid-full{grid-column:span 2}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.grid-full{grid-column:span 1}}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.card-h{padding:12px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);background:var(--surface2)}
+.card-h h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--cyan)}
+.card-h .badge{font-size:9px;padding:3px 10px;border-radius:10px;font-weight:600}
+.badge-live{background:rgba(34,197,94,.15);color:var(--green)}
+.badge-prom{background:rgba(167,139,250,.15);color:var(--purple)}
+.badge-geo{background:rgba(34,211,238,.15);color:var(--cyan)}
+.card-b{padding:18px}
+
+/* World Map (SVG) */
+.map-container{position:relative;width:100%;height:420px;background:var(--bg);border-radius:8px;overflow:hidden}
+.map-svg{width:100%;height:100%}
+.node-dot{cursor:pointer;transition:all .2s}
+.node-dot:hover{r:8;filter:drop-shadow(0 0 8px currentColor)}
+.node-label{font-size:9px;fill:var(--muted);pointer-events:none}
+.conn-line{stroke:var(--blue);stroke-width:.5;opacity:.2;stroke-dasharray:4 2}
+.node-tooltip{position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;pointer-events:none;z-index:50;display:none;min-width:160px}
+
+/* Edge Nodes Table */
+.node-table{width:100%;border-collapse:collapse;font-size:12px}
+.node-table th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+.node-table td{padding:8px 10px;border-bottom:1px solid var(--border)}
+.node-table tr:hover{background:var(--surface2)}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-healthy{background:var(--green)}
+.status-degraded{background:var(--orange)}
+.status-down{background:var(--red)}
+.latency-bar{display:inline-block;height:6px;border-radius:3px;min-width:4px}
+
+/* Chart */
+.chart-wrap{position:relative;height:220px}
+
+/* Cache Gauge */
+.gauge-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.gauge-box{text-align:center;padding:16px}
+.gauge-ring{position:relative;width:120px;height:120px;margin:0 auto}
+.gauge-ring svg{transform:rotate(-90deg)}
+.gauge-ring .val{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;font-weight:800}
+.gauge-ring .lbl{position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted)}
+
+/* Request Log */
+.req-log{max-height:300px;overflow-y:auto;font-family:'Courier New',monospace;font-size:11px}
+.req-log::-webkit-scrollbar{width:4px}
+.req-log::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.req-entry{padding:6px 0;border-bottom:1px solid rgba(30,45,74,.5);display:flex;gap:8px;align-items:center}
+.req-method{font-weight:700;width:36px;flex-shrink:0}
+.req-method.GET{color:var(--green)}
+.req-method.POST{color:var(--blue)}
+.req-method.PUT{color:var(--orange)}
+.req-path{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.req-status{width:30px;text-align:center;font-weight:600}
+.req-status.s2{color:var(--green)}
+.req-status.s3{color:var(--blue)}
+.req-status.s4{color:var(--orange)}
+.req-status.s5{color:var(--red)}
+.req-time{color:var(--muted);width:50px;text-align:right}
+.req-cache{font-size:9px;padding:1px 6px;border-radius:3px;width:36px;text-align:center;font-weight:600}
+.req-cache.HIT{background:rgba(34,197,94,.15);color:var(--green)}
+.req-cache.MISS{background:rgba(239,68,68,.15);color:var(--red)}
+
+/* Footer */
+.ftr{text-align:center;padding:16px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);margin-top:16px}
+.ftr a{color:var(--cyan);text-decoration:none}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.card{animation:fadeUp .4s ease both}
+.card:nth-child(2){animation-delay:.1s}
+.card:nth-child(3){animation-delay:.15s}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-left">
+    <div><div class="logo">Edge CDN</div><div class="sub">Global Infrastructure Dashboard</div></div>
+  </div>
+  <div class="hdr-right">
+    <span class="live">ALL SYSTEMS OPERATIONAL</span>
+    <span>12 Regions | 48 Edge Nodes</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</div>
+
+<div class="stats" id="statsRow"></div>
+
+<div class="grid">
+  <!-- World Map -->
+  <div class="card">
+    <div class="card-h"><h3>Global Edge Network</h3><span class="badge badge-geo">12 REGIONS</span></div>
+    <div class="card-b">
+      <div class="map-container" id="mapContainer">
+        <svg class="map-svg" id="mapSvg" viewBox="0 0 800 420"></svg>
+        <div class="node-tooltip" id="nodeTooltip"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edge Nodes -->
+  <div class="card">
+    <div class="card-h"><h3>Edge Node Status</h3><span class="badge badge-live">LIVE</span></div>
+    <div class="card-b" style="padding:0">
+      <div style="max-height:420px;overflow-y:auto">
+        <table class="node-table" id="nodeTable"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Request Throughput -->
+  <div class="card">
+    <div class="card-h"><h3>Request Throughput</h3><span class="badge badge-prom">PROMETHEUS</span></div>
+    <div class="card-b"><div class="chart-wrap"><canvas id="throughputChart"></canvas></div></div>
+  </div>
+
+  <!-- Cache Performance -->
+  <div class="card">
+    <div class="card-h"><h3>Cache Performance</h3><span class="badge badge-live">REAL-TIME</span></div>
+    <div class="card-b">
+      <div class="gauge-row">
+        <div class="gauge-box">
+          <div class="gauge-ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="10"/>
+              <circle cx="60" cy="60" r="50" fill="none" stroke="var(--green)" stroke-width="10" stroke-dasharray="314" stroke-dashoffset="47" stroke-linecap="round" id="hitGauge"/>
+            </svg>
+            <div class="val" style="color:var(--green)" id="hitPct">85%</div>
+            <div class="lbl">CACHE HIT RATE</div>
+          </div>
+        </div>
+        <div class="gauge-box">
+          <div class="gauge-ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="10"/>
+              <circle cx="60" cy="60" r="50" fill="none" stroke="var(--cyan)" stroke-width="10" stroke-dasharray="314" stroke-dashoffset="126" stroke-linecap="round" id="shieldGauge"/>
+            </svg>
+            <div class="val" style="color:var(--cyan)" id="shieldPct">60%</div>
+            <div class="lbl">ORIGIN SHIELD</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="chart-wrap" style="height:150px"><canvas id="cacheChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Latency Heatmap -->
+  <div class="card">
+    <div class="card-h"><h3>Latency Distribution (P50/P95/P99)</h3><span class="badge badge-prom">PROMETHEUS</span></div>
+    <div class="card-b"><div class="chart-wrap"><canvas id="latencyChart"></canvas></div></div>
+  </div>
+
+  <!-- Request Log -->
+  <div class="card">
+    <div class="card-h"><h3>Live Request Stream</h3><span class="badge badge-live">STREAMING</span></div>
+    <div class="card-b"><div class="req-log" id="reqLog"></div></div>
+  </div>
+
+  <!-- Bandwidth & Errors -->
+  <div class="card grid-full">
+    <div class="card-h"><h3>Bandwidth & Error Rate</h3><span class="badge badge-prom">24H METRICS</span></div>
+    <div class="card-b"><div class="chart-wrap"><canvas id="bwChart"></canvas></div></div>
+  </div>
+</div>
+
+<div class="ftr">
+  Built with Go, Redis, Consistent Hashing, Prometheus, Circuit Breaker | <a href="https://github.com/Hamz04/edge-cdn">View Source on GitHub</a>
+</div>
+
+<script>
+const regions=[
+  {name:'US-East (Virginia)',lat:37,lon:-77,nodes:6,rps:12400,latency:8,status:'healthy'},
+  {name:'US-West (Oregon)',lat:44,lon:-120,nodes:4,rps:8200,latency:12,status:'healthy'},
+  {name:'EU-West (Ireland)',lat:53,lon:-8,nodes:5,rps:9800,latency:22,status:'healthy'},
+  {name:'EU-Central (Frankfurt)',lat:50,lon:8,nodes:4,rps:7600,latency:18,status:'healthy'},
+  {name:'Asia-East (Tokyo)',lat:36,lon:140,nodes:5,rps:11200,latency:45,status:'healthy'},
+  {name:'Asia-SE (Singapore)',lat:1,lon:104,nodes:4,rps:6800,latency:52,status:'healthy'},
+  {name:'Asia-South (Mumbai)',lat:19,lon:73,nodes:3,rps:4200,latency:65,status:'degraded'},
+  {name:'South America (Sao Paulo)',lat:-23,lon:-46,nodes:3,rps:3400,latency:78,status:'healthy'},
+  {name:'Australia (Sydney)',lat:-34,lon:151,nodes:3,rps:2800,latency:85,status:'healthy'},
+  {name:'Middle East (Bahrain)',lat:26,lon:50,nodes:2,rps:1800,latency:72,status:'healthy'},
+  {name:'Africa (Cape Town)',lat:-34,lon:18,nodes:2,rps:1200,latency:95,status:'healthy'},
+  {name:'Canada (Montreal)',lat:45,lon:-74,nodes:3,rps:4800,latency:15,status:'healthy'}
+];
+
+function rnd(a,b){return Math.random()*(b-a)+a;}
+function rndInt(a,b){return Math.floor(rnd(a,b));}
+
+// Stats
+function initStats(){
+  const data=[
+    {val:'74,200',lbl:'Requests/sec',chg:'+8.2%',color:'var(--cyan)',up:true},
+    {val:'23ms',lbl:'Avg Latency',chg:'-12%',color:'var(--green)',up:true},
+    {val:'85.2%',lbl:'Cache Hit Rate',chg:'+2.1%',color:'var(--green)',up:true},
+    {val:'2.4 TB/h',lbl:'Bandwidth',chg:'+15%',color:'var(--blue)',up:true},
+    {val:'0.02%',lbl:'Error Rate',chg:'-0.01%',color:'var(--green)',up:true},
+    {val:'99.97%',lbl:'Uptime (30d)',chg:'SLA: 99.95%',color:'var(--purple)',up:true}
+  ];
+  document.getElementById('statsRow').innerHTML=data.map(d=>
+    `<div class="stat"><div class="val" style="color:${d.color}">${d.val}</div><div class="lbl">${d.lbl}</div><div class="chg" style="color:${d.up?'var(--green)':'var(--red)'}">${d.chg}</div></div>`
+  ).join('');
+}
+
+// World Map
+function initMap(){
+  const svg=document.getElementById('mapSvg');
+  function toXY(lat,lon){return{x:(lon+180)/360*800,y:(90-lat)/180*420};}
+  
+  // Draw grid lines
+  let gridHtml='';
+  for(let lat=-60;lat<=80;lat+=30){
+    const y=(90-lat)/180*420;
+    gridHtml+=`<line x1="0" y1="${y}" x2="800" y2="${y}" stroke="var(--border)" stroke-width=".3" opacity=".5"/>`;
+  }
+  for(let lon=-180;lon<=180;lon+=40){
+    const x=(lon+180)/360*800;
+    gridHtml+=`<line x1="${x}" y1="0" x2="${x}" y2="420" stroke="var(--border)" stroke-width=".3" opacity=".5"/>`;
+  }
+  
+  // Draw continent outlines (simplified)
+  const continents=[
+    // North America
+    'M80,100 L120,80 L180,85 L220,100 L240,120 L220,160 L180,180 L140,200 L100,180 L80,150Z',
+    // South America
+    'M180,210 L210,200 L230,220 L240,260 L230,300 L210,330 L190,320 L175,280 L170,240Z',
+    // Europe
+    'M380,80 L420,70 L450,80 L460,100 L440,120 L410,130 L380,120 L370,100Z',
+    // Africa
+    'M380,140 L420,130 L450,150 L460,200 L450,260 L420,290 L390,280 L370,240 L365,190Z',
+    // Asia
+    'M460,60 L550,50 L620,70 L660,100 L650,140 L600,160 L550,150 L500,140 L470,120 L460,90Z',
+    // Australia
+    'M600,260 L660,250 L690,270 L680,300 L640,310 L610,290Z',
+  ];
+  continents.forEach(d=>{
+    gridHtml+=`<path d="${d}" fill="var(--surface2)" stroke="var(--border)" stroke-width=".5" opacity=".6"/>`;
+  });
+  
+  // Connection lines between regions
+  regions.forEach((r,i)=>{
+    regions.forEach((r2,j)=>{
+      if(i<j && Math.random()<0.3){
+        const a=toXY(r.lat,r.lon),b=toXY(r2.lat,r2.lon);
+        gridHtml+=`<line class="conn-line" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+      }
+    });
+  });
+  
+  // Draw nodes
+  regions.forEach((r,i)=>{
+    const p=toXY(r.lat,r.lon);
+    const color=r.status==='healthy'?'var(--green)':r.status==='degraded'?'var(--orange)':'var(--red)';
+    // Pulse ring
+    gridHtml+=`<circle cx="${p.x}" cy="${p.y}" r="12" fill="none" stroke="${color}" stroke-width="1" opacity=".3"><animate attributeName="r" from="6" to="18" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" from=".4" to="0" dur="2s" repeatCount="indefinite"/></circle>`;
+    // Node dot
+    gridHtml+=`<circle class="node-dot" cx="${p.x}" cy="${p.y}" r="5" fill="${color}" stroke="#fff" stroke-width="1" data-idx="${i}"/>`;
+    // Label
+    gridHtml+=`<text class="node-label" x="${p.x+10}" y="${p.y+4}">${r.name.split('(')[0].trim()}</text>`;
+  });
+  
+  svg.innerHTML=gridHtml;
+  
+  // Tooltips
+  const tooltip=document.getElementById('nodeTooltip');
+  svg.querySelectorAll('.node-dot').forEach(dot=>{
+    dot.addEventListener('mouseenter',e=>{
+      const r=regions[dot.dataset.idx];
+      tooltip.style.display='block';
+      tooltip.style.left=(e.offsetX+15)+'px';
+      tooltip.style.top=(e.offsetY-10)+'px';
+      tooltip.innerHTML=`<div style="font-weight:700;margin-bottom:6px;color:var(--cyan)">${r.name}</div>
+        <div>Nodes: <b>${r.nodes}</b></div>
+        <div>RPS: <b>${r.rps.toLocaleString()}</b></div>
+        <div>Latency: <b>${r.latency}ms</b></div>
+        <div>Status: <b style="color:${r.status==='healthy'?'var(--green)':'var(--orange)'}">${r.status.toUpperCase()}</b></div>`;
+    });
+    dot.addEventListener('mouseleave',()=>tooltip.style.display='none');
+  });
+}
+
+// Node Table
+function initNodeTable(){
+  let html='<thead><tr><th>Region</th><th>Status</th><th>Nodes</th><th>RPS</th><th>Latency</th><th>Load</th></tr></thead><tbody>';
+  regions.forEach(r=>{
+    const sCls=r.status==='healthy'?'status-healthy':r.status==='degraded'?'status-degraded':'status-down';
+    const load=rndInt(20,85);
+    const loadColor=load>70?'var(--orange)':load>50?'var(--blue)':'var(--green)';
+    html+=`<tr>
+      <td style="font-weight:600">${r.name}</td>
+      <td><span class="status-dot ${sCls}"></span>${r.status}</td>
+      <td>${r.nodes}</td>
+      <td>${r.rps.toLocaleString()}</td>
+      <td><span class="latency-bar" style="width:${Math.min(r.latency,100)}px;background:${r.latency<30?'var(--green)':r.latency<60?'var(--blue)':'var(--orange)'}"></span> ${r.latency}ms</td>
+      <td style="color:${loadColor}">${load}%</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  document.getElementById('nodeTable').innerHTML=html;
+}
+
+// Throughput Chart
+function initThroughputChart(){
+  const ctx=document.getElementById('throughputChart').getContext('2d');
+  const labels=[];for(let i=0;i<60;i++)labels.push(i+'s');
+  new Chart(ctx,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Requests/sec',data:labels.map(()=>rndInt(60000,90000)),borderColor:'#22d3ee',backgroundColor:'rgba(34,211,238,.08)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},
+        {label:'Cache Hits/sec',data:labels.map(()=>rndInt(50000,76000)),borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.05)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#5b6b8a',font:{size:10}}}},
+      scales:{
+        x:{grid:{color:'rgba(30,45,74,.5)'},ticks:{color:'#5b6b8a',font:{size:9},maxTicksLimit:12}},
+        y:{grid:{color:'rgba(30,45,74,.5)'},ticks:{color:'#5b6b8a',font:{size:9},callback:v=>(v/1000).toFixed(0)+'K'}}
+      }
+    }
+  });
+}
+
+// Cache Chart
+function initCacheChart(){
+  const ctx=document.getElementById('cacheChart').getContext('2d');
+  const labels=[];for(let i=23;i>=0;i--)labels.push(i+'h');
+  new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:'Hits',data:labels.map(()=>rndInt(70,92)),backgroundColor:'rgba(34,197,94,.6)',borderRadius:2},
+        {label:'Misses',data:labels.map(()=>rndInt(5,25)),backgroundColor:'rgba(239,68,68,.4)',borderRadius:2}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#5b6b8a',font:{size:9}}}},
+      scales:{
+        x:{stacked:true,grid:{display:false},ticks:{color:'#5b6b8a',font:{size:8},maxTicksLimit:12}},
+        y:{stacked:true,grid:{color:'rgba(30,45,74,.5)'},ticks:{color:'#5b6b8a',font:{size:9},callback:v=>v+'%'}}
+      }
+    }
+  });
+}
+
+// Latency Chart
+function initLatencyChart(){
+  const ctx=document.getElementById('latencyChart').getContext('2d');
+  const labels=regions.map(r=>r.name.split('(')[1]?.replace(')','') || r.name.split(' ')[0]);
+  new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:'P50',data:regions.map(r=>r.latency*0.6+rnd(-3,3)),backgroundColor:'rgba(34,211,238,.7)',borderRadius:3},
+        {label:'P95',data:regions.map(r=>r.latency*1.2+rnd(-5,5)),backgroundColor:'rgba(59,130,246,.7)',borderRadius:3},
+        {label:'P99',data:regions.map(r=>r.latency*1.8+rnd(-8,8)),backgroundColor:'rgba(167,139,250,.7)',borderRadius:3}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#5b6b8a',font:{size:10}}}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#5b6b8a',font:{size:9},maxRotation:45}},
+        y:{grid:{color:'rgba(30,45,74,.5)'},ticks:{color:'#5b6b8a',font:{size:9},callback:v=>v+'ms'}}
+      }
+    }
+  });
+}
+
+// Bandwidth Chart
+function initBwChart(){
+  const ctx=document.getElementById('bwChart').getContext('2d');
+  const labels=[];for(let i=0;i<24;i++)labels.push(i+':00');
+  new Chart(ctx,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Bandwidth (GB/s)',data:labels.map(()=>rnd(1.5,4.2)),borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.4,pointRadius:0,borderWidth:2,yAxisID:'y'},
+        {label:'Error Rate (%)',data:labels.map(()=>rnd(0.001,0.08)),borderColor:'#ef4444',backgroundColor:'transparent',tension:.4,pointRadius:0,borderWidth:1.5,yAxisID:'y1'}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#5b6b8a',font:{size:10}}}},
+      scales:{
+        x:{grid:{color:'rgba(30,45,74,.5)'},ticks:{color:'#5b6b8a',font:{size:9}}},
+        y:{grid:{color:'rgba(30,45,74,.5)'},ticks:{color:'#5b6b8a',font:{size:9},callback:v=>v.toFixed(1)+' GB/s'},position:'left'},
+        y1:{grid:{display:false},ticks:{color:'#ef4444',font:{size:9},callback:v=>v.toFixed(3)+'%'},position:'right'}
+      }
+    }
+  });
+}
+
+// Request Log
+const paths=['/api/v1/content/img_892.jpg','/cdn/video/stream_4k.mp4','/static/bundle.min.js','/api/v1/data/feed.json','/assets/fonts/inter.woff2','/images/hero-banner.webp','/api/v2/search?q=test','/static/styles.css','/api/v1/auth/token','/cdn/downloads/sdk-v3.zip'];
+function genReqLog(){
+  let html='';
+  for(let i=0;i<25;i++){
+    const method=['GET','GET','GET','GET','POST','PUT'][rndInt(0,6)];
+    const path=paths[rndInt(0,paths.length)];
+    const status=[200,200,200,200,200,301,304,404,500][rndInt(0,9)];
+    const sClass=status<300?'s2':status<400?'s3':status<500?'s4':'s5';
+    const time=rndInt(1,120);
+    const cache=Math.random()>0.3?'HIT':'MISS';
+    html+=`<div class="req-entry">
+      <span class="req-method ${method}">${method}</span>
+      <span class="req-path">${path}</span>
+      <span class="req-status ${sClass}">${status}</span>
+      <span class="req-cache ${cache}">${cache}</span>
+      <span class="req-time">${time}ms</span>
+    </div>`;
+  }
+  document.getElementById('reqLog').innerHTML=html;
+}
+
+function addReqEntry(){
+  const log=document.getElementById('reqLog');
+  const method=['GET','GET','GET','POST'][rndInt(0,4)];
+  const path=paths[rndInt(0,paths.length)];
+  const status=[200,200,200,200,304,404][rndInt(0,6)];
+  const sClass=status<300?'s2':status<400?'s3':status<500?'s4':'s5';
+  const time=rndInt(1,80);
+  const cache=Math.random()>0.3?'HIT':'MISS';
+  const div=document.createElement('div');
+  div.className='req-entry';
+  div.style.background='rgba(34,211,238,.05)';
+  div.innerHTML=`<span class="req-method ${method}">${method}</span><span class="req-path">${path}</span><span class="req-status ${sClass}">${status}</span><span class="req-cache ${cache}">${cache}</span><span class="req-time">${time}ms</span>`;
+  log.insertBefore(div,log.firstChild);
+  setTimeout(()=>div.style.background='',500);
+  if(log.children.length>30)log.removeChild(log.lastChild);
+}
+
+function tick(){
+  document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-US',{hour12:false});
+}
+
+window.addEventListener('load',()=>{
+  initStats();initMap();initNodeTable();
+  initThroughputChart();initCacheChart();initLatencyChart();initBwChart();
+  genReqLog();
+  tick();setInterval(tick,1000);
+  setInterval(addReqEntry,800);
+});
+</script>
+</body>
+</html>

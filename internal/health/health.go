@@ -269,7 +269,7 @@ func (c *Checker) Handler() http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-cache")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		enc.Encode(resp)
+		_ = enc.Encode(resp)
 	}
 }
 
@@ -389,16 +389,6 @@ func (c *Checker) AddTarget(name, healthURL string) {
 }
 
 // inferRegion extracts a region hint from a node name.
-func inferRegion(nodeName string) string {
-	knownRegions := []string{"us-east", "us-west", "eu-west", "eu-central", "ap-south"}
-	lower := strings.ToLower(nodeName)
-	for _, r := range knownRegions {
-		if strings.Contains(lower, r) {
-			return r
-		}
-	}
-	return "default"
-}
 
 // StatusHandler returns an HTTP handler that exposes node health as JSON.
 func (c *Checker) StatusHandler() http.HandlerFunc {

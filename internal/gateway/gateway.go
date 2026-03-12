@@ -256,7 +256,7 @@ func (gw *Gateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":        status,
 		"node":          gw.nodeName,
 		"role":          "gateway",
@@ -272,7 +272,7 @@ func (gw *Gateway) handleRegions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	enc.Encode(map[string]interface{}{
+	_ = enc.Encode(map[string]interface{}{
 		"regions": regions,
 		"total":   len(regions),
 	})
@@ -291,7 +291,7 @@ func (gw *Gateway) handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	enc.Encode(map[string]interface{}{
+	_ = enc.Encode(map[string]interface{}{
 		"gateway":        gw.nodeName,
 		"total_requests": gw.totalRequests.Load(),
 		"healthy_nodes":  healthyCount,
@@ -305,7 +305,7 @@ func (gw *Gateway) writeError(w http.ResponseWriter, status int, message, reques
 	w.Header().Set("X-Gateway", gw.nodeName)
 	w.Header().Set("X-Request-ID", requestID)
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error":      message,
 		"status":     status,
 		"request_id": requestID,
@@ -320,20 +320,6 @@ func generateID() string {
 
 // inferRegion extracts a region hint from a node address.
 // e.g., "edge-us-east:8080" -> "us-east"
-func inferRegion(nodeAddr string) string {
-	host := nodeAddr
-	if idx := strings.LastIndex(host, ":"); idx > 0 {
-		host = host[:idx]
-	}
-	knownRegions := []string{"us-east", "us-west", "eu-west", "eu-central", "ap-south"}
-	lower := strings.ToLower(host)
-	for _, r := range knownRegions {
-		if strings.Contains(lower, r) {
-			return r
-		}
-	}
-	return "us-east"
-}
 
 // Config is the Stage 3 configuration for the gateway.
 type Config struct {

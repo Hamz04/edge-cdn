@@ -76,7 +76,7 @@ func (m *Metrics) StatsHandler() http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-cache")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		enc.Encode(stats)
+		_ = enc.Encode(stats)
 	}
 }
 

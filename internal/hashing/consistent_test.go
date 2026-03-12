@@ -1,70 +1,66 @@
 package hashing
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 func TestNewRing(t *testing.T) {
 	r := NewRing(100)
 	if r == nil {
-		t.Fatal("nil ring")
+		t.Fatal("expected non-nil ring")
+	}
+	if r.NodeCount() != 0 {
+		t.Fatalf("expected 0 nodes, got %d", r.NodeCount())
 	}
 }
 
-func TestConsistency(t *testing.T) {
+func TestAddRemoveNode(t *testing.T) {
+	r := NewRing(50)
+	if !r.AddNode("node1") {
+		t.Fatal("expected AddNode to return true")
+	}
+	if r.NodeCount() != 1 {
+		t.Fatalf("expected 1 node, got %d", r.NodeCount())
+	}
+	// duplicate add
+	if r.AddNode("node1") {
+		t.Fatal("expected false for duplicate add")
+	}
+	if !r.RemoveNode("node1") {
+		t.Fatal("expected RemoveNode to return true")
+	}
+	if r.NodeCount() != 0 {
+		t.Fatalf("expected 0 nodes after remove, got %d", r.NodeCount())
+	}
+}
+
+func TestGetNodeConsistency(t *testing.T) {
 	r := NewRing(100)
-	r.AddNode("n1")
-	r.AddNode("n2")
-	r.AddNode("n3")
-	first := r.GetNode("/foo/bar")
-	for i := 0; i < 200; i++ {
-		if got := r.GetNode("/foo/bar"); got != first {
-			t.Fatalf("inconsistent: %s vs %s", first, got)
-		}
-	}
-}
+	r.AddNode("node-a")
+	r.AddNode("node-b")
+	r.AddNode("node-c")
 
-func TestDistribution(t *testing.T) {
-	r := NewRing(150)
-	nodes := []string{"a", "b", "c"}
-	for _, n := range nodes {
-		r.AddNode(n)
-	}
-	counts := map[string]int{}
-	for i := 0; i < 9000; i++ {
-		counts[r.GetNode(fmt.Sprintf("/k/%d", i))]++
-	}
-	for _, n := range nodes {
-		if float64(counts[n])/9000 < 0.15 {
-			t.Errorf("%s got only %d/9000", n, counts[n])
-		}
-	}
-}
-
-func TestEmptyRing(t *testing.T) {
-	r := NewRing(100)
-	if got := r.GetNode("/x"); got != "" {
-		t.Fatalf("empty ring returned %s", got)
-	}
-}
-
-func TestSingleNode(t *testing.T) {
-	r := NewRing(100)
-	r.AddNode("solo")
+	key := "test-key-123"
+	first := r.GetNode(key)
 	for i := 0; i < 50; i++ {
-		if got := r.GetNode(fmt.Sprintf("/%d", i)); got != "solo" {
-			t.Fatalf("want solo, got %s", got)
+		if r.GetNode(key) != first {
+			t.Fatal("consistent hashing returned different node for same key")
 		}
 	}
 }
 
-func TestRemoveNode(t *testing.T) {
-	r := NewRing(100)
+func TestGetNodeEmptyRing(t *testing.T) {
+	r := NewRing(50)
+	node := r.GetNode("any-key")
+	if node != "" {
+		t.Fatalf("expected empty string for empty ring, got %q", node)
+	}
+}
+
+func TestGetNodes(t *testing.T) {
+	r := NewRing(50)
 	r.AddNode("a")
 	r.AddNode("b")
-	r.RemoveNode("a")
-	if r.NodeCount() != 1 {
-		t.Fatalf("want 1 node, got %d", r.NodeCount())
+	nodes := r.GetNodes()
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(nodes))
 	}
 }

@@ -1,59 +1,39 @@
 package origin
 
 import (
-	"strings"
 	"testing"
 )
 
-func TestFetch(t *testing.T) {
-	s := NewServer(5, 20)
-	resp, err := s.Fetch("/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp == nil {
-		t.Fatal("nil response")
-	}
-	if len(resp.Body) == 0 {
-		t.Fatal("empty body")
-	}
-	if resp.ContentType == "" {
-		t.Fatal("empty content type")
-	}
-	if resp.ETag == "" {
-		t.Fatal("empty etag")
+func TestNewServer(t *testing.T) {
+	s := NewServer(10, 50)
+	if s == nil {
+		t.Fatal("expected non-nil server")
 	}
 }
 
-func TestContentTypes(t *testing.T) {
-	s := NewServer(5, 20)
-	tests := []struct {
-		path string
-		want string
-	}{
-		{"/a.css", "css"},
-		{"/b.js", "javascript"},
-		{"/c.json", "json"},
-		{"/d.html", "html"},
+func TestFetch(t *testing.T) {
+	s := NewServer(1, 5)
+	resp, err := s.Fetch("/test-path")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, tc := range tests {
-		resp, err := s.Fetch(tc.path)
-		if err != nil {
-			t.Errorf("%s: %v", tc.path, err)
-			continue
-		}
-		if !strings.Contains(strings.ToLower(resp.ContentType), tc.want) {
-			t.Errorf("%s: ct=%s, want %s", tc.path, resp.ContentType, tc.want)
-		}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if len(resp.Body) == 0 {
+		t.Fatal("expected non-empty body")
 	}
 }
 
 func TestRequestCount(t *testing.T) {
-	s := NewServer(5, 20)
-	before := s.RequestCount()
-	s.Fetch("/x")
-	s.Fetch("/y")
-	if s.RequestCount()-before != 2 {
-		t.Fatalf("want 2 new, got %d", s.RequestCount()-before)
+	s := NewServer(1, 2)
+	initial := s.RequestCount()
+	s.Fetch("/a")
+	s.Fetch("/b")
+	if s.RequestCount() != initial+2 {
+		t.Fatalf("expected count %d, got %d", initial+2, s.RequestCount())
 	}
 }

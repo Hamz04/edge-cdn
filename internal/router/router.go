@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/Hamz04/edge-cdn/internal/cache"
+	"github.com/Hamz04/edge-cdn/internal/circuitbreaker"
 	"github.com/Hamz04/edge-cdn/internal/hashing"
 	"github.com/Hamz04/edge-cdn/internal/metrics"
 	"github.com/Hamz04/edge-cdn/internal/origin"
+	"github.com/Hamz04/edge-cdn/internal/retry"
 	"github.com/Hamz04/edge-cdn/internal/shield"
 	"github.com/Hamz04/edge-cdn/internal/warming"
 )
@@ -40,10 +42,12 @@ type Router struct {
 	healthHandler http.HandlerFunc
 	shield        *shield.Shield
 	warmer        *warming.Warmer
+	cb            *circuitbreaker.Breaker
+	retryer       *retry.Retryer
 }
 
-func New(cfg Config, ring *hashing.Ring, c cache.Cache, o *origin.Server, m *metrics.Metrics, logger *slog.Logger, s *shield.Shield, w *warming.Warmer) *Router {
-	return &Router{config: cfg, ring: ring, cache: c, origin: o, metrics: m, logger: logger, shield: s, warmer: w}
+func New(cfg Config, ring *hashing.Ring, c cache.Cache, o *origin.Server, m *metrics.Metrics, logger *slog.Logger, s *shield.Shield, w *warming.Warmer, cb *circuitbreaker.Breaker, retryer *retry.Retryer) *Router {
+	return &Router{config: cfg, ring: ring, cache: c, origin: o, metrics: m, logger: logger, shield: s, warmer: w, cb: cb, retryer: retryer}
 }
 
 func (rt *Router) SetHealthHandler(handler http.HandlerFunc) { rt.healthHandler = handler }
@@ -106,14 +110,38 @@ func (rt *Router) handleCDN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- Cache miss: fetch from origin via shield (request coalescing) ---
+	// --- Cache miss: fetch from origin via circuit breaker + retry + shield ---
 	var originResp *origin.FetchResponse
 	var shielded bool
 
-	if rt.shield != nil {
-		originResp, shielded, err = rt.shield.Fetch(ctx, r.URL.Path)
+	fetchFn := func() (*origin.FetchResponse, bool, error) {
+		if rt.shield != nil {
+			return rt.shield.Fetch(ctx, r.URL.Path)
+		}
+		resp, fetchErr := rt.origin.Fetch(r.URL.Path)
+		return resp, false, fetchErr
+	}
+
+	if rt.cb != nil && rt.retryer != nil {
+		result, cbErr := rt.cb.Execute(func() (interface{}, error) {
+			res, retryErr := rt.retryer.Do(ctx, func(ctx context.Context) (interface{}, error) {
+				resp, s, e := fetchFn()
+				if e != nil {
+					return nil, e
+				}
+				return []interface{}{resp, s}, nil
+			})
+			return res, retryErr
+		})
+		if cbErr != nil {
+			err = cbErr
+		} else {
+			parts := result.([]interface{})
+			originResp = parts[0].(*origin.FetchResponse)
+			shielded = parts[1].(bool)
+		}
 	} else {
-		originResp, err = rt.origin.Fetch(r.URL.Path)
+		originResp, shielded, err = fetchFn()
 	}
 
 	if err != nil {

@@ -160,7 +160,7 @@ func startEdgeNode(logger *slog.Logger) (http.Handler, []func()) {
 	cleanups = append(cleanups, rateLimiter.Stop)
 
 	// Circuit breaker: protects origin from cascading failures.
-	_ = circuitbreaker.New(circuitbreaker.Config{
+	cb := circuitbreaker.New(circuitbreaker.Config{
 		FailThreshold:         cbFailThreshold,
 		SuccessThreshold:      2,
 		OpenTimeout:           cbOpenTimeout,
@@ -169,7 +169,7 @@ func startEdgeNode(logger *slog.Logger) (http.Handler, []func()) {
 	})
 
 	// Retry: exponential backoff with jitter for origin fetches.
-	_ = retry.New(retry.DefaultConfig("origin"))
+	retryer := retry.New(retry.DefaultConfig("origin"))
 
 	// Origin shield: request coalescing to prevent thundering herd.
 	originShield := shield.New(originServer, shield.DefaultConfig())
@@ -194,7 +194,7 @@ func startEdgeNode(logger *slog.Logger) (http.Handler, []func()) {
 		NodeName:    nodeName,
 		NodeRegion:  nodeRegion,
 	}
-	cdnRouter := router.New(routerCfg, ring, cdnCache, originServer, cdnMetrics, logger, originShield, warmer)
+	cdnRouter := router.New(routerCfg, ring, cdnCache, originServer, cdnMetrics, logger, originShield, warmer, cb, retryer)
 
 	// --- Health checker (for monitoring peer nodes) ---
 	healthCfg := health.Config{

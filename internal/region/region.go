@@ -142,8 +142,8 @@ func (r *Router) RemoveNode(regionName, nodeAddr string) {
 // GetNearestRegion returns the closest healthy region to the given client region.
 // If clientRegion is empty or unknown, falls back to round-robin across all healthy regions.
 func (r *Router) GetNearestRegion(clientRegion string) string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	// Direct match — if the requested region is healthy and has nodes, use it.
 	if reg, ok := r.regions[clientRegion]; ok && reg.Healthy && len(reg.Nodes) > 0 {

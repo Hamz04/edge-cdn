@@ -225,7 +225,9 @@ func (gw *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, nodeAddr, reg
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		gw.logger.Warn("error copying response body", "node", nodeAddr, "error", err)
+	}
 
 	failoverLabel := "false"
 	if failedOver {

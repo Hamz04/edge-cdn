@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -375,8 +376,28 @@ func (c *Checker) probe(ctx context.Context, address string) bool {
 }
 
 // AddTarget registers a node for health checking using its name and health URL.
+// Extracts host:port from the URL for probe addressing, and infers region from node name.
 func (c *Checker) AddTarget(name, healthURL string) {
-	c.RegisterNode(name, "default")
+	// Extract host:port from "http://host:port/health"
+	addr := healthURL
+	addr = strings.TrimPrefix(addr, "http://")
+	addr = strings.TrimPrefix(addr, "https://")
+	if idx := strings.Index(addr, "/"); idx > 0 {
+		addr = addr[:idx]
+	}
+	c.RegisterNode(addr, inferRegion(name))
+}
+
+// inferRegion extracts a region hint from a node name.
+func inferRegion(nodeName string) string {
+	knownRegions := []string{"us-east", "us-west", "eu-west", "eu-central", "ap-south"}
+	lower := strings.ToLower(nodeName)
+	for _, r := range knownRegions {
+		if strings.Contains(lower, r) {
+			return r
+		}
+	}
+	return "default"
 }
 
 // StatusHandler returns an HTTP handler that exposes node health as JSON.

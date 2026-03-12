@@ -15,3 +15,5 @@ Thumbs.db
 
 # Go
 vendor/
+edge-cdn
+apply_fixes.py

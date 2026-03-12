@@ -318,9 +318,6 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-// inferRegion extracts a region hint from a node address.
-// e.g., "edge-us-east:8080" -> "us-east"
-
 // Config is the Stage 3 configuration for the gateway.
 type Config struct {
 	HealthCheckInterval time.Duration
